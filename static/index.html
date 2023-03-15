@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Looking Binormal</title>
+
+        <style type="text/css">
+            body {
+                margin: 0;
+                background: black;
+            }
+
+            canvas {
+                display: block;
+                position: absolute;
+                top: 15;
+                left: 0;
+            }
+
+            input[type="range"] {
+                width: 200px;
+                margin: 0;
+                color: red;
+            }
+
+            label {
+                color: white;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div>
+            <input
+                type="range"
+                id="zinput"
+                name="zscore"
+                min="-3"
+                max="3"
+                value="-3"
+                step="0.5"
+            />
+            <label for="zinput"
+                >zscore filter: <output id="zvalue"></output
+            ></label>
+            <input
+                type="range"
+                id="redinput"
+                name="redinput"
+                min="-3"
+                max="5"
+                value="3"
+                step="0.5"
+            />
+            <label for="redinput"
+                >red filter: <output id="redvalue"></output
+            ></label>
+            <input
+                type="range"
+                id="fontinput"
+                name="fontinput"
+                min="6"
+                max="48"
+                value="14"
+                step="1"
+            />
+            <label for="fontinput"
+                >character size: <output id="fontvalue"></output
+            ></label>
+        </div>
+
+        <canvas id="canvas"></canvas>
+
+        <script type="text/javascript">
+            const japanese =
+                "アイウエオカキクケコガギグゲゴサシスセソザジズゼゾタチツテトダヂヅデドナニヌネノハヒフヘホバビブベボパピプペポマミムメモヤユヨラリルレロワヲン０１２３４５６７８９一二三四五六七八九霊"
+            const charArr = japanese.split("")
+            const nbChars = charArr.length
+
+            function giveAnIndex(string, upperbound) {
+                let result = 0
+
+                for (let i = 0; i < string.length; i++) {
+                    const code = string.charCodeAt(string[i])
+
+                    result += code ? code : 0
+                }
+                if (upperbound == false) {
+                    return result
+                }
+                return result % upperbound
+            }
+
+            const c = document.getElementById("canvas")
+            const ctx = c.getContext("2d")
+
+            c.height = window.innerHeight
+            c.width = window.innerWidth
+
+            let fontSize = 12
+            let maxColumns = Math.floor(c.width / fontSize)
+
+            let idxCol = {}
+            let idxDrop = {}
+
+            function draw(idx, moji, red, std) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.003)"
+                ctx.fillRect(0, 0, c.width, c.height)
+
+                ctx.fillStyle = red ? "#F00" : std < 0 ? "#030" : "#5F5"
+                ctx.font = fontSize + "px arial"
+
+                ctx.fillText(
+                    moji,
+                    (idxCol[idx] % maxColumns) * fontSize,
+                    idxDrop[idx] * fontSize
+                )
+
+                if (idxDrop[idx] * fontSize > c.height) {
+                    idxDrop[idx] = 0
+                }
+
+                idxDrop[idx]++
+            }
+
+            function fade() {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.04)"
+                ctx.fillRect(0, 0, c.width, c.height)
+            }
+
+            window.onload = function () {
+                var conn
+
+                var body = document.getElementById("body")
+
+                const zinput = document.querySelector("#zinput")
+                const zvalue = document.querySelector("#zvalue")
+                zvalue.textContent = zinput.value
+                zinput.addEventListener("input", (event) => {
+                    zvalue.textContent = event.target.value
+                })
+
+                const redinput = document.querySelector("#redinput")
+                const redvalue = document.querySelector("#redvalue")
+                redvalue.textContent = redinput.value
+                redinput.addEventListener("input", (event) => {
+                    redvalue.textContent = event.target.value
+                })
+
+                const fontinput = document.querySelector("#fontinput")
+                const fontvalue = document.querySelector("#fontvalue")
+                fontvalue.textContent = fontinput.value
+                fontinput.addEventListener("input", (event) => {
+                    fontvalue.textContent = event.target.value
+                    fontSize = event.target.value
+                    maxColumns = Math.floor(c.width / fontSize)
+                })
+
+                function appendLog(item) {
+                    var doScroll =
+                        body.scrollTop >
+                        body.scrollHeight - body.clientHeight - 1
+                    body.appendChild(item)
+                    if (doScroll) {
+                        body.scrollTop = body.scrollHeight - body.clientHeight
+                    }
+                }
+
+                if (window["WebSocket"]) {
+                    conn = new WebSocket(
+                        "ws://" + document.location.host + "/websocket"
+                    )
+                    conn.onclose = function (evt) {
+                        var item = document.createElement("div")
+                        item.innerHTML = "<b>Connection closed.</b>"
+                        appendLog(item)
+                    }
+
+                    conn.onmessage = function (evt) {
+                        var messages = evt.data.split("\n")
+
+                        for (var i = 0; i < messages.length; i++) {
+                            json = JSON.parse(messages[i])
+                            const col = giveAnIndex(json["id"], false)
+
+                            if (idxCol[json["id"]] == undefined) {
+                                idxCol[json["id"]] = col
+                                idxDrop[json["id"]] = 1
+                            }
+
+                            const moji =
+                                charArr[giveAnIndex(json["action"], nbChars)]
+
+                            if (json["zscore"] < zinput.min) {
+                                const oldMin = zinput.min
+
+                                zinput.min = Math.floor(json["zscore"])
+
+                                if (zinput.value == oldMin) {
+                                    zinput.value = Math.floor(json["zscore"])
+                                    zvalue.textContent = zinput.value
+                                }
+                            }
+
+                            if (json["zscore"] > zinput.max) {
+                                zinput.max = Math.ceil(json["zscore"])
+                            }
+
+                            if (json["zscore"] >= zinput.value) {
+                                draw(
+                                    json["id"],
+                                    moji,
+                                    json["zscore"] >= redinput.value,
+                                    json["zscore"]
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            setInterval(fade, 200)
+        </script>
+    </body>
+</html>

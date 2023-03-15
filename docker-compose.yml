@@ -1,0 +1,22 @@
+version: "3.9"
+services:
+    redis:
+        image: redis:7.0.9-alpine
+        restart: always
+        ports:
+            - "6379:6379"
+        command: redis-server --save "" --loglevel warning
+    # engine:
+    #     build:
+    #         context: .
+    #         dockerfile: Dockerfile
+    #     ports:
+    #         - "5000:5000"
+    #     volumes:
+    #         - .:/app/code
+    #     depends_on:
+    #         - redis
+    #     environment:
+    #         - NODE_ENV=dev
+    #         - REDIS_HOST=redis
+    #         - REDIS_PORT=6379
