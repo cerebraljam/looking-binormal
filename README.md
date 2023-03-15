@@ -169,6 +169,7 @@ The current code isn't labeling behavior patterns, but it would be relatively ea
 
 * [Definition of the Probability Mass Function on Wikipedia](https://en.wikipedia.org/wiki/Binomial_distribution#Probability_mass_function). 
 * [3Blue1Brown on Youtube: Binomial distributions | Probabilities of probabilities, part 1](https://www.youtube.com/watch?v=8idr1WZ1A7Q)
+* [3Blue1Brown on Youtube: But what is the Central Limit Theorem?](https://www.youtube.com/watch?v=zeJD6dqJ5lo) explains the normal distribution, mean, standard deviation and Z Score.
 * Python3 [Scipy.stats.binom library](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.binom.html)
 * Go https://pkg.go.dev/gonum.org/v1/gonum/stat/distuv#Binomial
 * MIT News [Explained: Sigma - How do you know when a new finding is significant? The sigma value can tell you - but watch out for dead fish](https://news.mit.edu/2012/explained-sigma-0209)
