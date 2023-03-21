@@ -200,10 +200,8 @@ The service is built to injest a constant stream of events. Replaying events wil
 CONTAINER ID   IMAGE                COMMAND                  CREATED       STATUS      PORTS                                       NAMES
 fb9055d0f232   redis:7.0.9-alpine   "docker-entrypoint.s…"   3 weeks ago   Up 7 days   0.0.0.0:6379->6379/tcp, :::6379->6379/tcp   looking-binomial_redis_1
 
-$ docker exec -it fb9055d0f232 redis-cli
-127.0.0.1:6379> flushall
+$ docker exec -i fb9055d0f232 redis-cli flushall
 OK
-127.0.0.1:6379>
 ```
 
 

@@ -102,11 +102,11 @@
             let idxCol = {}
             let idxDrop = {}
 
-            function draw(idx, moji, red, std) {
+            function draw(idx, moji, red, label) {
                 ctx.fillStyle = "rgba(0, 0, 0, 0.003)"
                 ctx.fillRect(0, 0, c.width, c.height)
 
-                ctx.fillStyle = red ? "#F00" : std < 0 ? "#030" : "#5F5"
+                ctx.fillStyle = red ? "#F00" : "#3F3"
                 ctx.font = fontSize + "px arial"
 
                 ctx.fillText(
@@ -114,6 +114,16 @@
                     (idxCol[idx] % maxColumns) * fontSize,
                     idxDrop[idx] * fontSize
                 )
+
+                if (red) {
+                    ctx.fillStyle = "#FFF"
+                    ctx.fillText(
+                        label,
+                        ((idxCol[idx] % maxColumns) * fontSize) + (1.2 * fontSize),
+                        idxDrop[idx] * fontSize
+                    )
+
+                }
 
                 if (idxDrop[idx] * fontSize > c.height) {
                     idxDrop[idx] = 0
@@ -165,6 +175,31 @@
                     }
                 }
 
+                function makeLabel(overs, unders) {
+                    let label = ""
+
+                    let u = []
+                    let o = []
+
+                    if (overs.length) {
+                        for (var l = 0; l < overs.length; l++) {
+                            o = o + charArr[giveAnIndex(overs[l], nbChars)]
+                        }
+
+                        label = label + "+" + [...new Set(o)].sort()
+                    }
+
+                    if (unders.length) {
+                        for (var l = 0; l < unders.length; l++) {
+                            u = u + charArr[giveAnIndex(unders[l], nbChars)]
+                        }
+
+                        label = label + "-" + [...new Set(u)].sort().join("")
+                    }
+
+                    return label
+                }
+
                 if (window["WebSocket"]) {
                     conn = new WebSocket(
                         "ws://" + document.location.host + "/websocket"
@@ -187,9 +222,8 @@
                                 idxDrop[json["id"]] = 1
                             }
 
-                            const moji =
-                                charArr[giveAnIndex(json["action"], nbChars)]
-
+                            const moji = charArr[giveAnIndex(json["action"], nbChars)]
+                            
                             if (json["zscore"] < zinput.min) {
                                 const oldMin = zinput.min
 
@@ -205,12 +239,19 @@
                                 zinput.max = Math.ceil(json["zscore"])
                             }
 
+                            let label = ""
+                            const red = json["zscore"] >= redinput.value
+
+                            if (red) {
+                                label = makeLabel(json["overs"], json["unders"])
+                            }
+
                             if (json["zscore"] >= zinput.value) {
                                 draw(
                                     json["id"],
                                     moji,
-                                    json["zscore"] >= redinput.value,
-                                    json["zscore"]
+                                    red,
+                                    label,
                                 )
                             }
                         }

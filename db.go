@@ -152,8 +152,12 @@ func idCompleteBitsOfInfo(ctx *gin.Context, db *database, scope string, id strin
 
 		bitsOfInfo := calculateBitsOfInfo(p, nnt, nX)
 
+		if p < nnt*nX {
+			bitsOfInfo = bitsOfInfo * -1
+		}
+
 		db.client.HSet(ctx, idActionBitsOfInfoHKey, action, bitsOfInfo)
-		totalBitsOfInfo += bitsOfInfo
+		totalBitsOfInfo += math.Abs(bitsOfInfo)
 	}
 
 	db.client.HSet(ctx, idTotalBitsOfInfoKey, id, totalBitsOfInfo)
@@ -207,8 +211,13 @@ func idActionBitsOfInfo(ctx *gin.Context, db *database, scope string, id string,
 	// then continue with the calculation with the new values if applicable.
 	bitsOfInfo := calculateBitsOfInfo(p, nnt, nX)
 
+	if nX < nnt*p {
+		bitsOfInfo = bitsOfInfo * -1
+	}
+
 	db.client.HSet(ctx, idActionBitsOfInfoHKey, action, bitsOfInfo)
-	totalBitsOfInfo := math.Max(tsf-psf+bitsOfInfo, 0)
+
+	totalBitsOfInfo := math.Max(math.Abs(tsf)-math.Abs(psf)+math.Abs(bitsOfInfo), 0)
 
 	db.client.HSet(ctx, idTotalBitsOfInfoKey, id, totalBitsOfInfo)
 
@@ -309,6 +318,39 @@ func partialUpdateMean(ctx *gin.Context, db *database, scope string, mean float6
 	}
 
 	return nil
+}
+
+func idExtractReasons(ctx *gin.Context, db *database, scope string, id string) ([]string, []string) {
+
+	idActionBitsOfInfoHKey := fmt.Sprintf("%s:single:%s:bits:distinct", scope, id)
+
+	j, err := db.client.HGetAll(ctx, idActionBitsOfInfoHKey).Result()
+	if err != nil {
+		panic(err)
+	}
+
+	unders := []string{}
+	overs := []string{}
+
+	const limiter = 100.0
+
+	for k, v := range j {
+		psf, err := strconv.ParseFloat(v, 64)
+
+		if err != nil {
+			fmt.Println("Can't convert v to float64", v)
+		}
+		
+		if psf > limiter {
+			overs = append(overs, k)
+		}
+
+		if psf < -limiter {
+			unders = append(unders, k)
+		}
+	}
+
+	return unders, overs
 }
 
 func newDatabase(ctx context.Context, address, secretName string) (*database, error) {

@@ -81,22 +81,27 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 
 	if (populationTotalActionCount+1)%popRefreshStep == 0 {
 		mean, std = calculateAverageStd(c, db, scope, e.Identifier)
-		// fmt.Println(scope, populationTotalActionCount, popRefreshStep, "mean: ", mean, "std:", std)
 	} else {
 		mean, std = getAverageStd(c, db, scope)
 		partialUpdateMean(c, db, scope, mean, bitsOfInfo, oldPopulationCount, newPopulationCount)
 	}
 
-	//fmt.Println("Finished processing event")
+	// Finished processing event
 
 	var res DiscreteResponseSpec
 	res.Identifier = e.Identifier
 	res.Score = roundFloat(bitsOfInfo, 3)
 	res.Count = idTotalActionCount
 	res.Zscore = 0.0
+	res.Unders = []string{}
+	res.Overs = []string{}
 
 	if std != 0 {
 		res.Zscore = roundFloat((bitsOfInfo-mean)/std, 3)
+	}
+
+	if res.Zscore > 0.0 {
+		res.Unders, res.Overs = idExtractReasons(c, db, scope, e.Identifier)		
 	}
 
 	res.Source = e.Source
