@@ -186,7 +186,7 @@
                             o = o + charArr[giveAnIndex(overs[l], nbChars)]
                         }
 
-                        label = label + "+" + [...new Set(o)].sort()
+                        label = label + "+" + [...new Set(o)].sort().join("")
                     }
 
                     if (unders.length) {
