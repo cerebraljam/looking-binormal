@@ -12,6 +12,7 @@ RUN go mod download
 
 # Copy the rest of the Go code
 COPY *.go ./
+COPY static/ ./static
 
 # Explicitly download dependencies to the vendor directory.
 RUN CGO_ENABLED=0 GOOS=linux go mod vendor
@@ -25,6 +26,7 @@ RUN apk add --no-cache ca-certificates
 
 # Copy the binary to the production image from the builder stage.
 COPY --from=builder /app/server /server
+COPY --from=builder /app/static /static
 
 # Ensure the server is executable
 RUN chmod +x /server

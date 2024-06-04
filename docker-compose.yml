@@ -1,22 +1,27 @@
 version: "3.9"
 services:
-    redis:
-        image: redis:7.0.9-alpine
-        restart: always
-        ports:
-            - "6379:6379"
-        command: redis-server --save "" --loglevel warning
-    # engine:
-    #     build:
-    #         context: .
-    #         dockerfile: Dockerfile
-    #     ports:
-    #         - "5000:5000"
-    #     volumes:
-    #         - .:/app/code
-    #     depends_on:
-    #         - redis
-    #     environment:
-    #         - NODE_ENV=dev
-    #         - REDIS_HOST=redis
-    #         - REDIS_PORT=6379
+  redis:
+    image: redis:7.0.9-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    command: redis-server --save "" --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+  engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app/code
+    environment:
+      - REDIS_URL=redis://redis:6379/?dial_timeout=5s&max_retries=3
+      - ENV=dev
+    depends_on:
+      redis:
+        condition: service_healthy
