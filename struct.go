@@ -3,6 +3,7 @@ package main
 type EventSpec struct {
 	Organization string `json:"org"`
 	Source       string `json:"source"`
+	Timestamp    string `json:"timestamp"`
 	Population   string `json:"pop"`
 	Identifier   string `json:"id"`
 	Action       string `json:"action"`
@@ -20,6 +21,7 @@ type DiscreteResponseSpec struct {
 	Zscore     float64 `json:"zscore"`
 	Source     string  `json:"source"`
 	Population string  `json:"pop"`
+	Timestamp  string  `json:"timestamp"`
 	Identifier string  `json:"id"`
 	Action     string  `json:"action"`
 }

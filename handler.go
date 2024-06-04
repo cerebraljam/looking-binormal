@@ -101,6 +101,7 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 
 	res.Source = e.Source
 	res.Population = e.Population
+	res.Timestamp = e.Timestamp
 	res.Action = e.Action
 	endTime := time.Now()
 	res.Runtime = endTime.Sub(startTime).Milliseconds()
