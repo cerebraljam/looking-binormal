@@ -21,6 +21,7 @@ services:
       - .:/app/code
     environment:
       - REDIS_URL=redis://redis:6379/?dial_timeout=5s&max_retries=3
+      - LISTEN_ADDRESS=0.0.0.0:8080
       - ENV=dev
     depends_on:
       redis:
