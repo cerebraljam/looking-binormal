@@ -70,6 +70,8 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 		bitsOfInfo = idActionBitsOfInfo(c, db, scope, e.Identifier, e.Action, populationTotalActionCount, populationActionCount, idTotalActionCount, idActionCount, float64(idNormalizeTo))
 	}
 
+	actionMean, actionStd := calculateActionAverageStd(c, db, scope, e.Action, e.Identifier)
+
 	var mean, std float64
 	std = 1
 
@@ -97,6 +99,21 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 
 	if std != 0 {
 		res.Zscore = roundFloat((bitsOfInfo-mean)/std, 3)
+		if math.IsNaN(res.Zscore) {
+			res.Zscore = 0.0
+		}
+	} else {
+		res.Zscore = 0.0
+	}
+
+	if actionStd == 0 {
+		res.ActionDeviation = 0.0
+	} else {
+		actionBits := getActionBitsStr(c, db, scope, e.Identifier, e.Action)
+		res.ActionDeviation = roundFloat((actionBits-actionMean)/actionStd, 3)
+		if math.IsNaN(res.ActionDeviation) {
+			res.ActionDeviation = 0.0
+		}
 	}
 
 	res.Source = e.Source

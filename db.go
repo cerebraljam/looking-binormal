@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gonum.org/v1/gonum/stat/distuv"
 
@@ -309,6 +310,65 @@ func partialUpdateMean(ctx *gin.Context, db *database, scope string, mean float6
 	}
 
 	return nil
+}
+
+func calculateActionAverageStd(ctx *gin.Context, db *database, scope string, action string, excludeID string) (float64, float64) {
+	const SampleSize = 1200
+
+	var values []float64
+	var sum float64
+
+	pattern := fmt.Sprintf("%s:single:*:bits:distinct", scope)
+	cursor := uint64(0)
+
+	for {
+		keys, nextCursor, err := db.client.Scan(ctx, cursor, pattern, SampleSize).Result()
+		if err != nil {
+			panic(err)
+		}
+		cursor = nextCursor
+
+		for _, key := range keys {
+			if strings.Contains(key, excludeID) {
+				continue
+			}
+			bitsStr, err := db.client.HGet(ctx, key, action).Result()
+			if err != nil || bitsStr == "" {
+				continue
+			}
+			bits, err := strconv.ParseFloat(bitsStr, 64)
+			if err != nil {
+				continue
+			}
+			values = append(values, bits)
+			sum += bits
+		}
+
+		if cursor == 0 {
+			break
+		}
+	}
+
+	mean := sum / float64(len(values))
+	var stdSum float64
+	for _, v := range values {
+		stdSum += math.Pow(v-mean, 2)
+	}
+	std := math.Sqrt(stdSum / float64(len(values)))
+
+	return mean, std
+}
+
+func getActionBitsStr(ctx *gin.Context, db *database, scope string, id string, action string) float64 {
+	key := fmt.Sprintf("%s:single:%s:bits:distinct", scope, id)
+	actionBitsStr := db.client.HGet(ctx, key, action).Val()
+
+	actionBits, err := strconv.ParseFloat(actionBitsStr, 64)
+	if err != nil {
+		return 0.0
+	}
+
+	return actionBits
 }
 
 func newDatabase(ctx context.Context, address, secretName string) (*database, error) {

@@ -15,13 +15,14 @@ type AliveResponseSpec struct {
 }
 
 type DiscreteResponseSpec struct {
-	Runtime    int64   `json:"runtime"`
-	Score      float64 `json:"score"`
-	Count      int64   `json:"count"`
-	Zscore     float64 `json:"zscore"`
-	Source     string  `json:"source"`
-	Population string  `json:"pop"`
-	Timestamp  string  `json:"timestamp"`
-	Identifier string  `json:"id"`
-	Action     string  `json:"action"`
+	Runtime         int64   `json:"runtime"`
+	Score           float64 `json:"score"`
+	Count           int64   `json:"count"`
+	Zscore          float64 `json:"zscore"`
+	Source          string  `json:"source"`
+	Population      string  `json:"pop"`
+	Timestamp       string  `json:"timestamp"`
+	Identifier      string  `json:"id"`
+	Action          string  `json:"action"`
+	ActionDeviation float64 `json:"deviation"`
 }

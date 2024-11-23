@@ -14,7 +14,8 @@ var (
 	redisURL        = os.Getenv("REDIS_URL")
 	redisSecretName = os.Getenv("REDIS_SECRET_NAME")
 	environment     = os.Getenv("ENV")
-	listenAddr      = os.Getenv("LISTEN_ADDRESS")
+	listenAddr      = os.Getenv("HOST")
+	listenPort      = os.Getenv("PORT")
 )
 
 func main() {
@@ -27,11 +28,15 @@ func main() {
 	}
 
 	if listenAddr == "" {
-		listenAddr = "127.0.0.1:8080"
+		listenAddr = ""
+	}
+	if listenPort == "" {
+		listenPort = "8080"
+
 	}
 
 	router := initRouter(database)
-	router.Run(listenAddr)
+	router.Run(listenAddr + ":" + listenPort)
 
 	fmt.Println("Stopped looking binormal ...")
 }
