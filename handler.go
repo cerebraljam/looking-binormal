@@ -88,14 +88,14 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 		partialUpdateMean(c, db, scope, mean, bitsOfInfo, oldPopulationCount, newPopulationCount)
 	}
 
-	var actionStd float64
-	actionStd = 1
+	var actionMean, actionStd float64
+	actionStd = 1.0
 	if (populationActionCount+1)%idRefreshStep == 0 {
-		_, actionStd = calculateAverageStdForAction(c, db, scope, e.Action)
+		actionMean, actionStd = calculateAverageStdForAction(c, db, scope, e.Action)
 	} else {
-		_, actionStd = getAverageStdForAction(c, db, scope, e.Action)
+		actionMean, actionStd = getAverageStdForAction(c, db, scope, e.Action)
 	}
-	actionAverage := float64(populationActionCount) / float64(populationTotalActionCount)
+	// actionAverage := float64(populationActionCount) / float64(populationTotalActionCount)
 
 	var res DiscreteResponseSpec
 	res.Identifier = e.Identifier
@@ -114,8 +114,8 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 	}
 
 	if actionStd != 0 {
-		actionz := (float64(idActionCount) - actionAverage) / actionStd
-		res.ActionZScore = roundFloat(actionz, 3)
+		actionz := (float64(idActionCount) - actionMean) / actionStd
+		res.ActionZScore = float64(actionz) // roundFloat(actionz, 3)
 		if math.IsNaN(res.ActionZScore) {
 			res.ActionZScore = 0.0
 		}
