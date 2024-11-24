@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"gonum.org/v1/gonum/stat/distuv"
 
@@ -61,6 +60,13 @@ func IncreaseAbsoluteIdActionCount(ctx *gin.Context, db *database, scope string,
 	totalCount := db.client.HIncrBy(ctx, totalKey, id, 1)
 
 	return totalCount.Val()
+}
+
+func IncreaseActionCountForUser(ctx *gin.Context, db *database, scope string, action string, id string) int64 {
+	userActionKey := fmt.Sprintf("%s:single:action:%s:counters:distinct", scope, action)
+	actionCount := db.client.HIncrBy(ctx, userActionKey, id, 1)
+
+	return actionCount.Val()
 }
 
 func GetCountForKey(ctx *gin.Context, db *database, key string) map[string]int64 {
@@ -263,6 +269,52 @@ func calculateAverageStd(ctx *gin.Context, db *database, scope string, id string
 	return mean, std
 }
 
+func calculateAverageStdForAction(ctx *gin.Context, db *database, scope string, action string) (float64, float64) {
+	const SampleSize = 1200
+
+	var values []float64
+	var sum float64
+	var mean, std float64
+
+	key := fmt.Sprintf("%s:single:action:%s:counters:distinct", scope, action)
+
+	kv, err := db.client.HRandFieldWithValues(ctx, key, SampleSize).Result()
+	if err != nil {
+		panic(err)
+	}
+	if len(kv) == 0 {
+		return mean, 1
+	}
+
+	for k := range kv {
+		if kv[k].Value != "NaN" {
+			f, err := strconv.ParseFloat(kv[k].Value, 32)
+			if err != nil {
+				fmt.Println("Can't convert v to int64", kv[k].Value)
+			}
+			values = append(values, f)
+			sum += f
+		}
+	}
+
+	if len(values) > 0 {
+		mean = sum / math.Max(float64(len(values)), 1.0)
+	}
+
+	for i := 0; i < len(values); i++ {
+		std += math.Pow(values[i]-mean, 2)
+	}
+
+	std = math.Sqrt(std / math.Max(float64(len(values)), 1.0))
+	countOfActionAverage := fmt.Sprintf("%s:all:action:count:average", scope)
+	countOfActionStd := fmt.Sprintf("%s:all:action:count:std", scope)
+
+	db.client.HSet(ctx, countOfActionAverage, action, mean, 0)
+	db.client.HSet(ctx, countOfActionStd, action, std, 0)
+
+	return mean, std
+}
+
 func getAverageStd(ctx *gin.Context, db *database, scope string) (float64, float64) {
 	allBitsOfInfoAverage := fmt.Sprintf("%s:all:bits:average", scope)
 	allBitsOfInfoStd := fmt.Sprintf("%s:all:bits:std", scope)
@@ -273,6 +325,23 @@ func getAverageStd(ctx *gin.Context, db *database, scope string) (float64, float
 	}
 
 	std, _ := db.client.Get(ctx, allBitsOfInfoStd).Float64()
+	if math.IsNaN(std) {
+		return mean, 1.0
+	}
+
+	return mean, std
+}
+
+func getAverageStdForAction(ctx *gin.Context, db *database, scope string, action string) (float64, float64) {
+	countOfActionAverage := fmt.Sprintf("%s:all:action:count:average", scope)
+	countOfActionStd := fmt.Sprintf("%s:all:action:count:std", scope)
+
+	mean, _ := db.client.HGet(ctx, countOfActionAverage, action).Float64()
+	if math.IsNaN(mean) || mean == 0 {
+		return 0.0, 1.0
+	}
+
+	std, _ := db.client.HGet(ctx, countOfActionStd, action).Float64()
 	if math.IsNaN(std) {
 		return mean, 1.0
 	}
@@ -310,65 +379,6 @@ func partialUpdateMean(ctx *gin.Context, db *database, scope string, mean float6
 	}
 
 	return nil
-}
-
-func calculateActionAverageStd(ctx *gin.Context, db *database, scope string, action string, excludeID string) (float64, float64) {
-	const SampleSize = 1200
-
-	var values []float64
-	var sum float64
-
-	pattern := fmt.Sprintf("%s:single:*:bits:distinct", scope)
-	cursor := uint64(0)
-
-	for {
-		keys, nextCursor, err := db.client.Scan(ctx, cursor, pattern, SampleSize).Result()
-		if err != nil {
-			panic(err)
-		}
-		cursor = nextCursor
-
-		for _, key := range keys {
-			if strings.Contains(key, excludeID) {
-				continue
-			}
-			bitsStr, err := db.client.HGet(ctx, key, action).Result()
-			if err != nil || bitsStr == "" {
-				continue
-			}
-			bits, err := strconv.ParseFloat(bitsStr, 64)
-			if err != nil {
-				continue
-			}
-			values = append(values, bits)
-			sum += bits
-		}
-
-		if cursor == 0 {
-			break
-		}
-	}
-
-	mean := sum / float64(len(values))
-	var stdSum float64
-	for _, v := range values {
-		stdSum += math.Pow(v-mean, 2)
-	}
-	std := math.Sqrt(stdSum / float64(len(values)))
-
-	return mean, std
-}
-
-func getActionBitsStr(ctx *gin.Context, db *database, scope string, id string, action string) float64 {
-	key := fmt.Sprintf("%s:single:%s:bits:distinct", scope, id)
-	actionBitsStr := db.client.HGet(ctx, key, action).Val()
-
-	actionBits, err := strconv.ParseFloat(actionBitsStr, 64)
-	if err != nil {
-		return 0.0
-	}
-
-	return actionBits
 }
 
 func newDatabase(ctx context.Context, address, secretName string) (*database, error) {

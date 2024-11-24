@@ -51,8 +51,10 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 	// count the population (using hyperloglog)
 	oldPopulationCount := GetPopulationCount(c, db, scope)
 	newPopulationCount := UpdatePopulationCount(c, db, scope, e.Identifier)
+
 	populationActionCount, populationTotalActionCount := IncreasePopulationActionCount(c, db, scope, e.Action)
 	idActionCount, idTotalActionCount := IncreaseIdActionCount(c, db, scope, e.Identifier, e.Action)
+	_ = IncreaseActionCountForUser(c, db, scope, e.Action, e.Identifier)
 
 	var bitsOfInfo float64
 
@@ -70,8 +72,6 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 		bitsOfInfo = idActionBitsOfInfo(c, db, scope, e.Identifier, e.Action, populationTotalActionCount, populationActionCount, idTotalActionCount, idActionCount, float64(idNormalizeTo))
 	}
 
-	actionMean, actionStd := calculateActionAverageStd(c, db, scope, e.Action, e.Identifier)
-
 	var mean, std float64
 	std = 1
 
@@ -83,36 +83,41 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 
 	if (populationTotalActionCount+1)%popRefreshStep == 0 {
 		mean, std = calculateAverageStd(c, db, scope, e.Identifier)
-		// fmt.Println(scope, populationTotalActionCount, popRefreshStep, "mean: ", mean, "std:", std)
 	} else {
 		mean, std = getAverageStd(c, db, scope)
 		partialUpdateMean(c, db, scope, mean, bitsOfInfo, oldPopulationCount, newPopulationCount)
 	}
 
-	//fmt.Println("Finished processing event")
+	var actionStd float64
+	actionStd = 1
+	if (populationActionCount+1)%idRefreshStep == 0 {
+		_, actionStd = calculateAverageStdForAction(c, db, scope, e.Action)
+	} else {
+		_, actionStd = getAverageStdForAction(c, db, scope, e.Action)
+	}
+	actionAverage := float64(populationActionCount) / float64(populationTotalActionCount)
 
 	var res DiscreteResponseSpec
 	res.Identifier = e.Identifier
 	res.Score = roundFloat(bitsOfInfo, 3)
 	res.Count = idTotalActionCount
+	res.ActionCount = idActionCount
+
 	res.Zscore = 0.0
+	res.ActionZScore = 0.0
 
 	if std != 0 {
 		res.Zscore = roundFloat((bitsOfInfo-mean)/std, 3)
 		if math.IsNaN(res.Zscore) {
 			res.Zscore = 0.0
 		}
-	} else {
-		res.Zscore = 0.0
 	}
 
-	if actionStd == 0 {
-		res.ActionDeviation = 0.0
-	} else {
-		actionBits := getActionBitsStr(c, db, scope, e.Identifier, e.Action)
-		res.ActionDeviation = roundFloat((actionBits-actionMean)/actionStd, 3)
-		if math.IsNaN(res.ActionDeviation) {
-			res.ActionDeviation = 0.0
+	if actionStd != 0 {
+		actionz := (float64(idActionCount) - actionAverage) / actionStd
+		res.ActionZScore = roundFloat(actionz, 3)
+		if math.IsNaN(res.ActionZScore) {
+			res.ActionZScore = 0.0
 		}
 	}
 
