@@ -52,11 +52,15 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 	oldPopulationCount := GetPopulationCount(c, db, scope)
 	newPopulationCount := UpdatePopulationCount(c, db, scope, e.Identifier)
 
+	oldActionCount := GetActionCount(c, db, scope)
+	newActionCount := UpdateActionCount(c, db, scope, e.Action)
+
 	populationActionCount, populationTotalActionCount := IncreasePopulationActionCount(c, db, scope, e.Action)
 	idActionCount, idTotalActionCount := IncreaseIdActionCount(c, db, scope, e.Identifier, e.Action)
-	_ = IncreaseActionCountForUser(c, db, scope, e.Action, e.Identifier)
+	actionPopulationCount, actionTotalPopulationCount := IncreaseActionPopulationCount(c, db, scope, e.Identifier)
+	actionIdCount, actionTotalIdCount := IncreaseActionIdCount(c, db, scope, e.Identifier, e.Action)
 
-	var bitsOfInfo float64
+	var bitsOfInfo, actionBitsOfInfo float64
 
 	if idTotalActionCount < idRefresh {
 		idRefreshStep = int64(math.Max(8, math.Min(math.Pow(2, math.Ceil(math.Log2(float64(idTotalActionCount)))), idRefresh)))
@@ -64,16 +68,20 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 
 	if (idTotalActionCount+1)%idRefreshStep == 0 {
 		mapGlobalActionCount := GetGlobalCounts(c, db, scope)
-		mapIdActionCount := GetIdCounts(c, db, scope, e.Identifier)
+		mapIdActionCount := GetIdCountMap(c, db, scope, e.Identifier)
+		mapActionIdCount := GetActionCountMap(c, db, scope, e.Action)
 
 		bitsOfInfo = idCompleteBitsOfInfo(c, db, scope, e.Identifier, mapGlobalActionCount, mapIdActionCount, populationTotalActionCount, idTotalActionCount, float64(idNormalizeTo))
+		actionBitsOfInfo = actionCompleteBitsOfInfo(c, db, scope, e.Action, mapGlobalActionCount, mapActionIdCount, populationTotalActionCount, actionTotalIdCount, float64(idNormalizeTo))
 
 	} else { // partial update
 		bitsOfInfo = idActionBitsOfInfo(c, db, scope, e.Identifier, e.Action, populationTotalActionCount, populationActionCount, idTotalActionCount, idActionCount, float64(idNormalizeTo))
+		actionBitsOfInfo = ActionIdBitsOfInfo(c, db, scope, e.Identifier, e.Action, actionTotalPopulationCount, actionPopulationCount, actionTotalIdCount, actionIdCount, float64(idNormalizeTo))
 	}
 
-	var mean, std float64
+	var mean, std, actionMean, actionStd float64
 	std = 1
+	actionStd = 1
 
 	// I want to refresh the mean and std often when the code starts, but then I want it to do it on a less regular basis.
 	// This this calculation allows the code to refresh the mean and std at every power of 2, until it reaches a stable sample size (popRefresh == 4096)
@@ -88,15 +96,12 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 		partialUpdateMean(c, db, scope, mean, bitsOfInfo, oldPopulationCount, newPopulationCount)
 	}
 
-	var actionStd float64
-	actionStd = 1.0
-	if (populationActionCount+1)%idRefreshStep == 0 {
-		_, actionStd = calculateAverageStdForAction(c, db, scope, e.Action)
+	if (actionTotalPopulationCount+1)%popRefreshStep == 0 {
+		actionMean, actionStd = calculateAverageStdForAction(c, db, scope, e.Action)
 	} else {
-		_, actionStd = getAverageStdForAction(c, db, scope, e.Action)
+		actionMean, actionStd = getAverageStd(c, db, scope)
+		partialActionUpdateMean(c, db, scope, actionMean, actionBitsOfInfo, oldActionCount, newActionCount)
 	}
-	actionAverage := float64(populationActionCount) / float64(populationTotalActionCount)
-	thisActionBitsOfInfo := calculateBitsOfInfo(actionAverage, float64(idTotalActionCount), float64(idActionCount))
 
 	var res DiscreteResponseSpec
 	res.Identifier = e.Identifier
@@ -115,7 +120,7 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 	}
 
 	if actionStd != 0 {
-		actionz := (thisActionBitsOfInfo - bitsOfInfo) / actionStd
+		actionz := (actionBitsOfInfo - actionMean) / actionStd
 		res.ActionZScore = roundFloat(actionz, 3)
 		if math.IsNaN(res.ActionZScore) {
 			res.ActionZScore = 0.0

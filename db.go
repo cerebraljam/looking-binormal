@@ -35,6 +35,23 @@ func UpdatePopulationCount(ctx *gin.Context, db *database, scope string, id stri
 	return val.Val()
 }
 
+func GetActionCount(ctx *gin.Context, db *database, scope string) int64 {
+	key := fmt.Sprintf("%s:all:actions:count", scope)
+	val := db.client.PFCount(ctx, key)
+
+	return val.Val()
+}
+
+func UpdateActionCount(ctx *gin.Context, db *database, scope string, action string) int64 {
+	key := fmt.Sprintf("%s:all:actions:count", scope)
+	if err := db.client.PFAdd(ctx, key, action).Err(); err != nil {
+		panic(err)
+	}
+	val := db.client.PFCount(ctx, key)
+
+	return val.Val()
+}
+
 func IncreasePopulationActionCount(ctx *gin.Context, db *database, scope string, action string) (int64, int64) {
 	actionSpecificKey := fmt.Sprintf("%s:all:users:counters:distinct", scope)
 	totalKey := fmt.Sprintf("%s:all:users:counters:total", scope)
@@ -55,18 +72,24 @@ func IncreaseIdActionCount(ctx *gin.Context, db *database, scope string, id stri
 	return actionCount.Val(), totalCount.Val()
 }
 
-func IncreaseAbsoluteIdActionCount(ctx *gin.Context, db *database, scope string, id string) int64 {
-	totalKey := fmt.Sprintf("%s:single:counters:absolutetotal", scope)
-	totalCount := db.client.HIncrBy(ctx, totalKey, id, 1)
+func IncreaseActionPopulationCount(ctx *gin.Context, db *database, scope string, id string) (int64, int64) {
+	idSpecificKey := fmt.Sprintf("%s:all:actions:counters:distinct", scope)
+	totalKey := fmt.Sprintf("%s:all:actions:counters:total", scope)
 
-	return totalCount.Val()
+	idCount := db.client.HIncrBy(ctx, idSpecificKey, id, 1)
+	totalCount := db.client.IncrBy(ctx, totalKey, 1)
+
+	return idCount.Val(), totalCount.Val()
 }
 
-func IncreaseActionCountForUser(ctx *gin.Context, db *database, scope string, action string, id string) int64 {
-	userActionKey := fmt.Sprintf("%s:single:action:%s:counters:distinct", scope, action)
-	actionCount := db.client.HIncrBy(ctx, userActionKey, id, 1)
+func IncreaseActionIdCount(ctx *gin.Context, db *database, scope string, id string, action string) (int64, int64) {
+	idSpecificKey := fmt.Sprintf("%s:single:action:%s:counters:distinct", scope, action)
+	totalKey := fmt.Sprintf("%s:single:action:counters:total", scope)
 
-	return actionCount.Val()
+	idCount := db.client.HIncrBy(ctx, idSpecificKey, id, 1)
+	totalCount := db.client.HIncrBy(ctx, totalKey, id, 1)
+
+	return idCount.Val(), totalCount.Val()
 }
 
 func GetCountForKey(ctx *gin.Context, db *database, key string) map[string]int64 {
@@ -95,8 +118,15 @@ func GetGlobalCounts(ctx *gin.Context, db *database, scope string) map[string]in
 	return m
 }
 
-func GetIdCounts(ctx *gin.Context, db *database, scope string, id string) map[string]int64 {
+func GetIdCountMap(ctx *gin.Context, db *database, scope string, id string) map[string]int64 {
 	key := fmt.Sprintf("%s:single:%s:counters:distinct", scope, id)
+	m := GetCountForKey(ctx, db, key)
+
+	return m
+}
+
+func GetActionCountMap(ctx *gin.Context, db *database, scope string, action string) map[string]int64 {
+	key := fmt.Sprintf("%s:single:action:%s:counters:distinct", scope, action)
 	m := GetCountForKey(ctx, db, key)
 
 	return m
@@ -218,6 +248,95 @@ func idActionBitsOfInfo(ctx *gin.Context, db *database, scope string, id string,
 	totalBitsOfInfo := math.Max(tsf-psf+bitsOfInfo, 0)
 
 	db.client.HSet(ctx, idTotalBitsOfInfoKey, id, totalBitsOfInfo)
+
+	return totalBitsOfInfo
+}
+
+func actionCompleteBitsOfInfo(ctx *gin.Context, db *database, scope string, action string, globalMap map[string]int64, distinctMap map[string]int64, globalCount int64, n int64, nnt float64) float64 {
+	// globalCount: populationTotalActionCount
+	// n: idTotalActionCount
+	// nnt: idNormalizeTo
+
+	actionIdBitsOfInfoHKey := fmt.Sprintf("%s:single:action:%s:bits:distinct", scope, action)
+	actionTotalBitsOfInfoHKey := fmt.Sprintf("%s:single:action:bits:total", scope)
+
+	var totalBitsOfInfo float64
+
+	nFloat := float64(n)
+	nnt = math.Min(nFloat, nnt)
+
+	for id, value := range globalMap {
+		var x float64
+		elem, ok := distinctMap[action]
+		if ok {
+			x = float64(elem)
+		}
+
+		p := math.Min(float64(value), 1) / float64(globalCount)
+
+		nX := math.Round(x * nnt / nFloat)
+
+		bitsOfInfo := calculateBitsOfInfo(p, nnt, nX)
+
+		db.client.HSet(ctx, actionIdBitsOfInfoHKey, id, bitsOfInfo)
+		totalBitsOfInfo += bitsOfInfo
+	}
+
+	db.client.HSet(ctx, actionTotalBitsOfInfoHKey, action, totalBitsOfInfo)
+
+	return totalBitsOfInfo
+}
+
+func ActionIdBitsOfInfo(ctx *gin.Context, db *database, scope string, id string, action string, globalCount int64, b int64, n int64, x int64, nnt float64) float64 {
+	// globalcount: populationTotalActionCount
+	// b: populationActionCount
+	// n: idTotalActionCount
+	// x: idActionCount
+	// nnt: idNormalizeTo
+
+	actionIdBitsOfInfoHKey := fmt.Sprintf("%s:single:action:%s:bits:distinct", scope, action)
+	actionTotalBitsOfInfoKey := fmt.Sprintf("%s:single:action:bits:total", scope)
+
+	ps := db.client.HGet(ctx, actionIdBitsOfInfoHKey, id).Val()       // population specific bitsOfInfo
+	ts := db.client.HGet(ctx, actionTotalBitsOfInfoKey, action).Val() // total bitsOfInfo
+
+	var psf float64
+	var tsf float64
+
+	if ps == "" || ts == "" {
+		return 0.0
+	}
+
+	if ps != "NaN" {
+		var err error
+		psf, err = strconv.ParseFloat(ps, 64)
+		if err != nil {
+			fmt.Println("error 12:", err)
+		}
+	}
+
+	if ts != "NaN" {
+		var err error
+		tsf, err = strconv.ParseFloat(ts, 64)
+		if err != nil {
+			fmt.Println("error 13:", err)
+		}
+	}
+
+	p := math.Max(float64(b), 1) / math.Max(float64(globalCount), 1)
+
+	// Normalizing id count to a restricted range
+	nnt = math.Min(float64(n), nnt)
+
+	nX := math.Round(float64(x) * nnt / float64(n))
+
+	// then continue with the calculation with the new values if applicable.
+	bitsOfInfo := calculateBitsOfInfo(p, nnt, nX)
+
+	db.client.HSet(ctx, actionIdBitsOfInfoHKey, id, bitsOfInfo)
+	totalBitsOfInfo := math.Max(tsf-psf+bitsOfInfo, 0)
+
+	db.client.HSet(ctx, actionTotalBitsOfInfoKey, action, totalBitsOfInfo)
 
 	return totalBitsOfInfo
 }
@@ -354,6 +473,38 @@ func getAverageStdForAction(ctx *gin.Context, db *database, scope string, action
 func partialUpdateMean(ctx *gin.Context, db *database, scope string, mean float64, bitsOfInfo float64, oldpop int64, newpop int64) error {
 	allBitsOfInfoAverage := fmt.Sprintf("%s:all:bits:average", scope)
 	allBitsOfInfoStd := fmt.Sprintf("%s:all:bits:std", scope)
+
+	pipe := db.client.TxPipeline()
+
+	if oldpop == 0 {
+		pipe.Set(ctx, allBitsOfInfoAverage, bitsOfInfo, 0)
+		pipe.Set(ctx, allBitsOfInfoStd, 0, 0)
+	}
+
+	if oldpop == newpop {
+		removing := 1.0 / float64(oldpop) * mean
+		adding := 1.0 / float64(newpop) * bitsOfInfo
+		pipe.Set(ctx, allBitsOfInfoAverage, mean-removing+adding, 0)
+	}
+
+	if oldpop < newpop {
+		remaining := float64(oldpop) / float64(newpop) * mean
+		adding := (float64(newpop-oldpop) / float64(newpop)) * bitsOfInfo
+		pipe.Set(ctx, allBitsOfInfoAverage, remaining+adding, 0)
+	}
+
+	_, err := pipe.Exec(ctx)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return nil
+}
+
+func partialActionUpdateMean(ctx *gin.Context, db *database, scope string, mean float64, bitsOfInfo float64, oldpop int64, newpop int64) error {
+	allBitsOfInfoAverage := fmt.Sprintf("%s:all:actions:bits:average", scope)
+	allBitsOfInfoStd := fmt.Sprintf("%s:all:actions:bits:std", scope)
 
 	pipe := db.client.TxPipeline()
 
