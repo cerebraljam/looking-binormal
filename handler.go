@@ -89,7 +89,7 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 	}
 
 	var actionStd float64
-	actionStd = 1
+	actionStd = 1.0
 	if (populationActionCount+1)%idRefreshStep == 0 {
 		_, actionStd = calculateAverageStdForAction(c, db, scope, e.Action)
 	} else {
