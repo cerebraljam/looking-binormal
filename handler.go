@@ -96,6 +96,7 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 		_, actionStd = getAverageStdForAction(c, db, scope, e.Action)
 	}
 	actionAverage := float64(populationActionCount) / float64(populationTotalActionCount)
+	thisActionBitsOfInfo := calculateBitsOfInfo(actionAverage, float64(idTotalActionCount), float64(idActionCount))
 
 	var res DiscreteResponseSpec
 	res.Identifier = e.Identifier
@@ -114,7 +115,7 @@ func discreteHandler(c *gin.Context, db *database, hub *Hub) {
 	}
 
 	if actionStd != 0 {
-		actionz := (float64(idActionCount) - actionAverage) / actionStd
+		actionz := (thisActionBitsOfInfo - bitsOfInfo) / actionStd
 		res.ActionZScore = roundFloat(actionz, 3)
 		if math.IsNaN(res.ActionZScore) {
 			res.ActionZScore = 0.0

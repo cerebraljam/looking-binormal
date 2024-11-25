@@ -294,6 +294,8 @@ func calculateAverageStdForAction(ctx *gin.Context, db *database, scope string, 
 			}
 			values = append(values, f)
 			sum += f
+		} else {
+			values = append(values, 0)
 		}
 	}
 
